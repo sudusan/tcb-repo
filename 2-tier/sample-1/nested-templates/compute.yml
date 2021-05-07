@@ -1,0 +1,398 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: A Template to define Venafi ec2 deployment in AWS.
+  - Not intended for multi-region deployments. 
+
+Parameters: 
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  ApplicationName:
+    Type: String
+    Default: delwiki
+  EnvironmentClass:
+    Type: String
+    Default: prd
+
+  VpcId:
+    Description: ID of an existing VPC
+    Type: AWS::EC2::VPC::Id
+  SubnetID1:
+    Description: Subnet ID to deploy to
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: must be the name of an existing subnet in a VPC.
+  SubnetID2:
+    Description: Subnet ID to deploy to
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: must be the name of an existing subnet in a VPC.
+  LBSubnetID1:
+    Description: Subnet ID to deploy to
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: must be the name of an existing subnet in a VPC.
+  LBSubnetID2:
+    Description: Subnet ID to deploy to
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: must be the name of an existing subnet in a VPC.
+  AZ1:
+    Description: AvailabilityZone1
+    Type: AWS::EC2::AvailabilityZone::Name
+    ConstraintDescription: must be the name of an existing AZ
+  AZ2:
+    Description: AvailabilityZone1
+    Type: AWS::EC2::AvailabilityZone::Name
+    ConstraintDescription: must be the name of an existing AZ
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.large
+    AllowedValues:
+    - t1.micro
+    - t2.nano
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - m1.small
+    - m1.medium
+    - m1.large
+    - m1.xlarge
+    - m2.xlarge
+    - m2.2xlarge
+    - m2.4xlarge
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - m5.large
+    - m5.xlarge
+    - c1.medium
+    - c1.xlarge
+    - c3.large
+    - c3.xlarge
+    - c3.2xlarge
+    - c3.4xlarge
+    - c3.8xlarge
+    - c4.large
+    - c4.xlarge
+    - c4.2xlarge
+    - c4.4xlarge
+    - c4.8xlarge
+    - g2.2xlarge
+    - g2.8xlarge
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - i2.xlarge
+    - i2.2xlarge
+    - i2.4xlarge
+    - i2.8xlarge
+    - d2.xlarge
+    - d2.2xlarge
+    - d2.4xlarge
+    - d2.8xlarge
+    - hi1.4xlarge
+    - hs1.8xlarge
+    - cr1.8xlarge
+    - cc2.8xlarge
+    - cg1.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  AMIID:
+    Description: Type the AMI id
+    Type: String
+    Default: ami-0f4636641719fad51
+  S3BucketName:
+    Description: S3 Bucket name to create for LB logging
+    Type: String
+    Default: delwikiprd-alb-logs
+
+Resources: 
+  ApplicationEC2SG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: EC2 Server Security Group
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: 10.0.0.0/8
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 10.0.0.0/8
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/8
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.0.0.0/8
+    
+  LBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: AutoResults LB Security Group
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 10.0.0.0/8
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 10.0.0.0/8
+        - IpProtocol: tcp
+          FromPort: '8080'
+          ToPort: '8080'
+          CidrIp: 10.0.0.0/8
+  
+  WebServerLaunchConfig01:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId:
+        Ref: AMIID
+      InstanceType:
+        Ref: InstanceType
+      SecurityGroups:
+      - Ref: ApplicationEC2SG
+      IamInstanceProfile:
+        Ref: SMInstanceProfile
+      KeyName:
+        Ref: KeyName
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - 'yum remove -y java-1.7.0'
+            - 'yum install -y java-1.8.0'
+            - 'mkdir /opt/delwiki'
+            - 'echo fs-f3bef411.efs.us-east-1.amazonaws.com:/ /opt/delwiki  nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2
+              0 0 >> /etc/fstab'
+            - "#Mounting EFS volume\n"
+            - 'mount /opt/delwiki'
+            - 'cp /opt/delwiki/delwiki-init.d /etc/init.d/delwiki'
+            - 'cp /opt/delwiki/delwiki-sysconfig /etc/sysconfig/delwiki'
+            - 'chkconfig --add delwiki'
+            - "/etc/init.d/delwiki start\n"
+            - "# Removing default chef and install chef\n"
+            - 'yum -y remove chef'
+            - 'curl "https://bootstrap.prd-chef-server.autodesk.com/bootstrap?prefix=delwiki-prd-370124462127&role=delwiki_prd"
+              | bash'
+            - 'yum update -y'
+  ALBS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Join 
+        - ''
+        - - !Ref ApplicationName
+          - '-alb-logs-use1'
+    DeletionPolicy: Delete
+
+  BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref ALBS3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: AWSConsoleStmt-370124462127
+            Effect: Allow
+            Principal:
+              AWS:
+                - '127311923021'
+            Action: 's3:PutObject'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref ALBS3Bucket
+                - /*
+
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Subnets:
+        - !Ref LBSubnetID1
+        - !Ref LBSubnetID2
+      SecurityGroups:
+        - !Ref LBSecurityGroup
+      Scheme: internal
+      LoadBalancerAttributes:
+        - Key: routing.http2.enabled
+          Value: 'true'
+        - Key: access_logs.s3.enabled
+          Value: 'true'
+        - Key: access_logs.s3.bucket
+          Value: !Ref ALBS3Bucket
+  ALBListenerHTTPS:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Certificates:
+        - CertificateArn: !Ref LBCertificate
+      Port: '443'
+      Protocol: HTTPS
+  ALBListenerHTTP:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: 443
+            Protocol: HTTPS
+            Query: '#{query}'
+            StatusCode: HTTP_301
+          Type: redirect
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: '80'
+      Protocol: HTTP
+
+  ALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckPath: /icpmetrics/automation/portal.aspx
+      HealthyThresholdCount: 3
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VpcId
+  LBCertificate:
+    Type: 'AWS::CertificateManager::Certificate'
+    Properties:
+      DomainName: delwiki.autodesk.com
+      DomainValidationOptions:
+        - DomainName: delwiki.autodesk.com
+          ValidationDomain: autodesk.com
+      ValidationMethod: EMAIL
+
+
+  WebServerASG01:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: WebServerASG01
+      AvailabilityZones:
+      - Ref: AZ1
+      - Ref: AZ2
+      VPCZoneIdentifier:
+      - Ref: SubnetID1
+      - Ref: SubnetID2
+      DesiredCapacity: '1'
+      HealthCheckGracePeriod: '180'
+      HealthCheckType: EC2
+      TargetGroupARNs:
+      - Ref: ALBTargetGroup
+      LaunchConfigurationName:
+        Ref: WebServerLaunchConfig01
+      MinSize: '1'
+      MaxSize: '1'
+      Tags:
+      - Key: Name
+        Value: delwiki-prd-asg-1
+        PropagateAtLaunch: 'true'
+      - Key: Backup
+        Value: Backup
+        PropagateAtLaunch: 'true'
+      MetricsCollection:
+      - Granularity: 1Minute
+        Metrics:
+        - GroupTotalInstances
+        - GroupInServiceInstances
+        - GroupStandbyInstances
+        - GroupPendingInstances
+        - GroupTerminatingInstances
+        - GroupMaxSize
+        - GroupMinSize
+        - GroupDesiredCapacity
+      NotificationConfigurations:
+      - TopicARN:
+          Ref: SNSTopicEmail
+        NotificationTypes:
+        - autoscaling:EC2_INSTANCE_LAUNCH
+        - autoscaling:EC2_INSTANCE_LAUNCH_ERROR
+        - autoscaling:EC2_INSTANCE_TERMINATE
+        - autoscaling:EC2_INSTANCE_TERMINATE_ERROR
+  
+  SNSTopicEmail:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+      - Endpoint: chollamuthu.narayanan@autodesk.com
+        Protocol: email
+      TopicName: EC2-notification-UnixTeam
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Ref: S3BucketName
+      VersioningConfiguration:
+        Status: Enabled
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: S3BucketName
+      PolicyDocument:
+        Statement:
+        - Action:
+          - s3:PutObject
+          Effect: Allow
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: S3BucketName
+              - "/*"
+          Principal:
+            Service:
+            - delivery.logs.amazonaws.com
+  SMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: SMProfile
+      Path: "/"
+      Roles:
+      - Ref: SMRole
+  SMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: SMPolicy
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: "*"
+      Roles:
+      - Ref: SMRole
+  SMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+
+Outputs:
+  EC2SecurityGroup: 
+    Description: Security Group of the main compute processing fleet. 
+    Value: !GetAtt ApplicationEC2SG.GroupId

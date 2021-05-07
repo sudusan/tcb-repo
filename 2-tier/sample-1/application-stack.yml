@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: myapp template with nested stacks
+Parameters:
+  NestedTemplateBucket:
+    Type: String
+    Default: "tcb-cfn-templates"
+  RDSClusterName:
+    Type: String
+    Default: "myapp-cluster"
+  DatabaseNameP:
+    Type: String
+    Default: "myappdb"
+  DatabaseReadReplicaName:
+    Type: String
+    Default: "myapp-rr"
+  DatabaseUsername:
+    Type: String
+    Default: "wikiuser"
+  DatabasePassword:
+    Type: String
+    Default: "myapp123"
+  IAMAuthentication:
+    Type: String
+    Default: "False"
+  DatabaseSecurityGroups:
+    Type: String
+    Default: "RDS-Security-Group"
+  ApplicationName:
+    Type: String
+    Default: myapp
+  EnvironmentClass:
+    Type: String
+    Default: PRD
+    AllowedValues:
+    - PRD
+  AMIIdentifier:
+    Type: String
+    Default: "ami-0f2ff98a5a52caecb"
+  DBInstanceType:
+    Type: String
+    Default: "db.t3.medium"
+  EC2InstanceType: 
+    Type: String
+    Default: "t2.medium"
+  EC2KeyName: 
+    Type: String
+    Default: "myapp-prd"
+  EC2VPCSubNetIds:
+    Type: List<String>
+    Default: "subnet-0ee829d6fca26674b, subnet-084a0adec2e608e17"
+  ALBVPCSubNetIds:
+    Type: List<String>
+    Default: "subnet-0abbdc2944e753896, subnet-0d74a9862e8c61c4b"
+  DBSubNetIds:
+    Type: String
+    Default: "subnet-06770a8a9cb2c0a26,subnet-07fa0a3cda6e26972"
+  VpcId: 
+    Type: String
+    Default: "vpc-0f535e5c7f334e1eb"
+
+Resources:
+  ComputeFleet:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AMIID: !Ref AMIIdentifier
+        LBSubnetID1: !Select [ 0 , !Ref ALBVPCSubNetIds ]
+        LBSubnetID2: !Select [ 1 , !Ref ALBVPCSubNetIds ]
+        InstanceType: !Ref EC2InstanceType
+        KeyName: !Ref EC2KeyName
+        SubnetID1: !Select [ 0 , !Ref EC2VPCSubNetIds ]
+        SubnetID2: !Select [ 1 , !Ref EC2VPCSubNetIds ]
+        VpcId: !Ref VpcId
+        AZ1: us-east-1a
+        AZ2: us-east-1b
+      Tags:
+        - Key: EnvironmentClass
+          Value: !Ref EnvironmentClass    
+        - Key: ApplicationName
+          Value: !Ref ApplicationName  
+      TemplateURL: !Sub https://s3.amazonaws.com/${NestedTemplateBucket}/nested-templates/compute.yml 
+  RelationalDataStore:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        EC2FleetSecurityGroup: !GetAtt ComputeFleet.Outputs.EC2SecurityGroup
+        DatabaseInstanceType: !Ref DBInstanceType
+        RDSClusterName: !Ref RDSClusterName
+        DatabaseNameP: !Ref DatabaseNameP
+        DatabaseReadReplicaName: !Ref DatabaseReadReplicaName
+        DatabasePassword: !Ref DatabasePassword
+        DatabaseUsername: !Ref DatabaseUsername
+        IAMAuthentication: !Ref IAMAuthentication
+        VpcId: !Ref VpcId
+        DatabaseSubnets:  !Ref DBSubNetIds
+        DatabaseSecurityGroups: !Ref DatabaseSecurityGroups
+
+      Tags:
+        - Key: EnvironmentClass
+          Value: !Ref EnvironmentClass    
+        - Key: ApplicationName
+          Value: !Ref ApplicationName  
+      TemplateURL: !Sub https://s3.amazonaws.com/${NestedTemplateBucket}/nested-templates/rds-mysql.yml 

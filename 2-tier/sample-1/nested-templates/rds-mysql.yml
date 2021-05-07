@@ -1,0 +1,381 @@
+Skip to content
+Search or jump to…
+
+Pull requests
+Issues
+Marketplace
+Explore
+ 
+@sudusan 
+sudusan
+/
+new-nested-stack
+1
+00
+Code
+Issues
+Pull requests
+Actions
+Projects
+Wiki
+Security
+Insights
+Settings
+new-nested-stack/IAC/nested-templates/rds-mysql.yml
+@sudusan
+sudusan added
+Latest commit b3bb88a on 9 Nov 2019
+ History
+ 1 contributor
+337 lines (337 sloc)  10.3 KB
+  
+AWSTemplateFormatVersion: 2010-09-09
+Description: RDS Stack for Aurora MySQL
+Parameters:
+  DatabaseInstanceType:
+    Default: db.t3.medium
+    AllowedValues:
+      - db.t3.medium
+      - db.r5.large
+      - db.r5.xlarge
+      - db.r5.2xlarge
+      - db.r5.4xlarge
+      - db.r5.8xlarge
+      - db.r5.16xlarge
+    Description: The instance type to use for the database.
+    Type: String
+  EC2FleetSecurityGroup: 
+    Type: String
+  RDSClusterName:
+    Default: dbname-cluster
+    Description: The RDS Cluster Name.
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '^[a-zA-Z0-9\-]*$'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DatabaseNameP:
+    Default: dbname
+    Description: The Primary database name
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '^[a-zA-Z0-9\-]*$+'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters
+  DatabaseReadReplicaName:
+    Default: dbname-RR
+    Description: 'The Read Replica database name. '
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '^[a-zA-Z0-9\-]*$+'
+    ConstraintDescription: >-
+      must begin with a letter and contain only alphanumeric characters. And,
+      Read Replica name should not be same as DatabaseName
+  DatabasePassword:
+    AllowedPattern: '^[a-zA-Z0-9\-\!\*\)\#//(]*$+'
+    ConstraintDescription: must contain only alphanumeric characters & Special characters.
+    Description: The database admin account password.
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  DatabaseUsername:
+    Default: root
+    AllowedPattern: '[a-zA-Z0-9]+'
+    ConstraintDescription: must contain only alphanumeric characters.
+    Description: The database admin account user name.
+    MaxLength: '16'
+    MinLength: '1'
+    Type: String
+  IAMAuthentication:
+    Default: 'False'
+    AllowedValues:
+      - 'True'
+      - 'False'
+    Description: Enable/Disable IAM Authentication for the RDS
+    Type: String
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: The database backup retention period in days.
+  DatabaseSubnets:
+    Description: The subnets to place database instances in.
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  DatabaseSecurityGroups:
+    Description: Security groups to apply to the RDS cluster.
+    Type: String
+    Default: RDS-Security-Group
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Database Configuration
+        Parameters:
+          - DatabaseInstanceType
+          - RDSClusterName
+          - DatabaseNameP
+          - DatabaseReadReplicaName
+          - DatabaseUsername
+          - DatabasePassword
+          - DatabaseSubnets
+          - DatabaseSecurityGroups
+          - DatabaseBackupRetentionPeriod
+    ParameterLabels:
+      DatabaseInstanceType:
+        default: Database Instance Type
+      RDSClusterName:
+        default: Database Cluster Name
+      DatabaseNameP:
+        default: Database Instance Name
+      DatabaseReadReplicaName:
+        default: Database Read Replica Name
+      DatabasePassword:
+        default: Database Password
+      DatabaseUsername:
+        default: Database Username
+      DatabaseBackupRetentionPeriod:
+        default: Database Backup Retention Period
+      DatabaseSubnets:
+        default: Database Subnets
+      DatabaseSecurityGroups:
+        default: Database Security Groups
+Resources:
+  RdsKey:
+    Type: 'AWS::KMS::Key'
+    Properties:
+      Description: RDS CMK used to encrypt database and snapshots
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: key-consolepolicy-3
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Join 
+                - ''
+                - - 'arn:aws:iam::'
+                  - !Ref 'AWS::AccountId'
+                  - ':root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow administration of the key
+            Effect: Allow
+            Principal:
+              AWS:
+                - >-
+                  arn:aws:iam::497877539434:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS
+            Action:
+              - 'kms:Create*'
+              - 'kms:Describe*'
+              - 'kms:Enable*'
+              - 'kms:List*'
+              - 'kms:Put*'
+              - 'kms:Update*'
+              - 'kms:Revoke*'
+              - 'kms:Disable*'
+              - 'kms:Get*'
+              - 'kms:Delete*'
+              - 'kms:TagResource'
+              - 'kms:UntagResource'
+              - 'kms:ScheduleKeyDeletion'
+              - 'kms:CancelKeyDeletion'
+            Resource: '*'
+          - Sid: Allow use of the key
+            Effect: Allow
+            Principal:
+              AWS:
+                - >-
+                  arn:aws:iam::497877539434:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Resource: '*'
+          - Sid: Allow attachment of persistent resources
+            Effect: Allow
+            Principal:
+              AWS:
+                - >-
+                  arn:aws:iam::497877539434:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS
+            Action:
+              - 'kms:CreateGrant'
+              - 'kms:ListGrants'
+              - 'kms:RevokeGrant'
+            Resource: '*'
+            Condition:
+              Bool:
+                'kms:GrantIsForAWSResource': 'true'
+  rdsAlias:
+    Type: 'AWS::KMS::Alias'
+    Properties:
+      AliasName: alias/rdskey
+      TargetKeyId: !Ref RdsKey
+  DatabaseSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: CloudFormation managed DB subnet group.
+      SubnetIds: !Ref DatabaseSubnets
+  DBEC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Open database for access
+      VpcId: !Ref VpcId
+      GroupName: !Ref DatabaseSecurityGroups
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2FleetSecurityGroup
+  RdsMonitoringRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: ADSK-rds-monitoring-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole'
+      Path: /
+  CustomDBParameterGroupAMS:
+    Type: 'AWS::RDS::DBClusterParameterGroup'
+    Properties:
+      Description: Custom Aurora MySQL parameters
+      Family: aurora-mysql5.7
+      Parameters:
+        wait_timeout: '200000'
+  DatabaseClus:
+    Type: 'AWS::RDS::DBCluster'
+    Properties:
+      Engine: aurora-mysql
+      EngineVersion: 5.7.12
+      DBClusterParameterGroupName: !Ref CustomDBParameterGroupAMS
+      Port: 3306
+      DBClusterIdentifier: !Ref RDSClusterName
+      DatabaseName: !Ref DatabaseNameP
+      MasterUsername: !Ref DatabaseUsername
+      MasterUserPassword: !Ref DatabasePassword
+      BackupRetentionPeriod: '1'
+      PreferredBackupWindow: '09:00-10:00'
+      PreferredMaintenanceWindow: 'sat:08:00-sat:08:30'
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VpcSecurityGroupIds:
+        - !GetAtt 
+          - DBEC2SecurityGroup
+          - GroupId
+      DeletionProtection: 'true'
+      EnableIAMDatabaseAuthentication: !Ref IAMAuthentication
+      EnableCloudwatchLogsExports:
+        - error
+        - audit
+      StorageEncrypted: 'True'
+      KmsKeyId: !Ref RdsKey
+      Tags:
+        - Key: Name
+          Value: !Ref DatabaseNameP
+    DeletionPolicy: Snapshot
+  DatabasePrimaryInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      Engine: aurora-mysql
+      DBInstanceIdentifier: !Ref DatabaseNameP
+      DBClusterIdentifier: !Ref DatabaseClus
+      DBInstanceClass: !Ref DatabaseInstanceType
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      PubliclyAccessible: 'False'
+      CopyTagsToSnapshot: 'True'
+      DeleteAutomatedBackups: 'False'
+      PreferredMaintenanceWindow: 'sat:08:00-sat:08:30'
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt 
+        - RdsMonitoringRole
+        - Arn
+      Tags:
+        - Key: Name
+          Value: !Ref DatabaseNameP
+  DatabaseReplicaInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref DatabaseClus
+      DBInstanceIdentifier: !Ref DatabaseReadReplicaName
+      DBInstanceClass: !Ref DatabaseInstanceType
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      PubliclyAccessible: 'False'
+      CopyTagsToSnapshot: 'True'
+      PreferredMaintenanceWindow: 'sat:08:00-sat:08:30'
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt 
+        - RdsMonitoringRole
+        - Arn
+  topicDBOpsEmail:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: DBOpsEmail
+      TopicName: DBOpsEmail
+  snspolicyDBOpsEmail:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      Topics:
+        - !Ref topicDBOpsEmail
+      PolicyDocument:
+        Version: 2012-10-17
+        Id: __default_policy_ID
+        Statement:
+          - Sid: __default_statement_ID
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - 'SNS:GetTopicAttributes'
+              - 'SNS:SetTopicAttributes'
+              - 'SNS:AddPermission'
+              - 'SNS:RemovePermission'
+              - 'SNS:DeleteTopic'
+              - 'SNS:Subscribe'
+              - 'SNS:ListSubscriptionsByTopic'
+              - 'SNS:Publish'
+              - 'SNS:Receive'
+            Resource: !Ref topicDBOpsEmail
+  subscriptionDBOpsEmail:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      Endpoint: service.now.eis.eo.database.operations@autodesk.com
+      Protocol: email
+      TopicArn: !Ref topicDBOpsEmail
+  RDSEventSubscription:
+    Type: 'AWS::RDS::EventSubscription'
+    Properties:
+      EventCategories:
+        - availability
+        - configuration change
+        - creation
+        - deletion
+        - failover
+        - failure
+        - low storage
+        - maintenance
+        - recovery
+        - restoration
+      SnsTopicArn: !Ref topicDBOpsEmail
+      SourceType: db-instance
+      Enabled: true
+© 2021 GitHub, Inc.
+Terms
+Privacy
+Security
+Status
+Docs
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
+Loading complete
