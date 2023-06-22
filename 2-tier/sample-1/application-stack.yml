@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: myapp template with nested stacks - in dev branch
+Description: myapp template with nested stacks - in dev-sud branch
 Parameters:
   NestedTemplateBucket:
     Type: String
